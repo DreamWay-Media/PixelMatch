@@ -36,10 +36,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     fs.mkdirSync(uploadsDir, { recursive: true });
   }
   
+  // Create profile pictures directory if it doesn't exist
+  const profilePicsDir = path.join(uploadsDir, "profiles");
+  if (!fs.existsSync(profilePicsDir)) {
+    fs.mkdirSync(profilePicsDir, { recursive: true });
+  }
+  
   // Serve uploaded files
   app.use("/uploads", (req, res, next) => {
     // Only serve from the uploads directory
-    const filePath = path.join(uploadsDir, path.basename(req.path));
+    const filePath = path.join(uploadsDir, req.path.replace(/^\/+/, ''));
     if (fs.existsSync(filePath)) {
       res.sendFile(filePath);
     } else {
@@ -339,6 +345,94 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error searching for user:", error);
       res.status(500).json({ message: "Failed to search for user" });
+    }
+  });
+  
+  // Profile picture upload endpoint
+  app.post("/api/users/profile-picture", 
+    upload.single('profilePicture'),
+    async (req, res) => {
+      try {
+        if (!req.isAuthenticated()) {
+          return res.status(401).json({ message: "Not authenticated" });
+        }
+        
+        // Check if file was uploaded
+        if (!req.file) {
+          return res.status(400).json({ message: "No profile picture uploaded" });
+        }
+        
+        const userId = req.user!.id;
+        
+        // Generate a unique filename with user id
+        const fileExtension = path.extname(req.file.originalname);
+        const filename = `user_${userId}_${Date.now()}${fileExtension}`;
+        const profilePicPath = path.join("profiles", filename);
+        const absolutePath = path.join(uploadsDir, profilePicPath);
+        
+        // Save file to the profiles folder
+        fs.writeFileSync(absolutePath, req.file.buffer);
+        
+        // Update user profile in the database
+        const user = await storage.updateUser(userId, {
+          profilePicture: `/uploads/${profilePicPath}`
+        });
+        
+        if (!user) {
+          return res.status(404).json({ message: "User not found" });
+        }
+        
+        // Return updated user without password
+        const { password, ...updatedUser } = user;
+        res.json(updatedUser);
+      } catch (error) {
+        console.error("Error uploading profile picture:", error);
+        res.status(500).json({ message: "Failed to upload profile picture" });
+      }
+    }
+  );
+  
+  // Get current user profile
+  app.get("/api/users/profile", async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ message: "Not authenticated" });
+      }
+      
+      const user = await storage.getUser(req.user!.id);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      // Don't return the password
+      const { password, ...safeUser } = user;
+      res.json(safeUser);
+    } catch (error) {
+      console.error("Error fetching user profile:", error);
+      res.status(500).json({ message: "Failed to fetch user profile" });
+    }
+  });
+  
+  // Update user profile
+  app.patch("/api/users/profile", async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ message: "Not authenticated" });
+      }
+      
+      const userId = req.user!.id;
+      const user = await storage.updateUser(userId, req.body);
+      
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      // Don't return the password
+      const { password, ...safeUser } = user;
+      res.json(safeUser);
+    } catch (error) {
+      console.error("Error updating user profile:", error);
+      res.status(500).json({ message: "Failed to update user profile" });
     }
   });
   

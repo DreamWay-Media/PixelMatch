@@ -1,10 +1,12 @@
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { 
   PanelTopDashed, 
   SaveIcon, 
   Share2Icon, 
-  LogOut 
+  LogOut,
+  UserCircle 
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -15,6 +17,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/hooks/use-auth";
+import UserProfileDialog from "./UserProfileDialog";
 
 interface HeaderProps {
   onSaveReport?: () => void;
@@ -23,6 +26,7 @@ interface HeaderProps {
 
 export default function Header({ onSaveReport, onShare }: HeaderProps) {
   const { user, logoutMutation } = useAuth();
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
 
   // Helper function to get initials from username
   const getInitials = (username: string) => {
@@ -38,7 +42,7 @@ export default function Header({ onSaveReport, onShare }: HeaderProps) {
     return username;
   };
 
-  // Get avatar image based on role (mock implementation)
+  // Get avatar image based on role (only as fallback if no profile picture)
   const getAvatarSrc = (role: string) => {
     if (role === 'designer') {
       return "https://images.unsplash.com/photo-1494790108377-be9c29b29330?ixlib=rb-1.2.1&auto=format&fit=facearea&facepad=2&w=256&h=256&q=80";
@@ -52,6 +56,10 @@ export default function Header({ onSaveReport, onShare }: HeaderProps) {
 
   const handleLogout = () => {
     logoutMutation.mutate();
+  };
+  
+  const openProfileDialog = () => {
+    setIsProfileOpen(true);
   };
 
   return (
@@ -72,31 +80,43 @@ export default function Header({ onSaveReport, onShare }: HeaderProps) {
         </Button>
         
         {user && (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="relative h-8 w-8 rounded-full">
-                <Avatar className="h-8 w-8">
-                  <AvatarImage src={getAvatarSrc(user.role)} alt={user.username} />
-                  <AvatarFallback>{getInitials(user.username)}</AvatarFallback>
-                </Avatar>
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent className="w-56" align="end" forceMount>
-              <DropdownMenuLabel className="font-normal">
-                <div className="flex flex-col space-y-1">
-                  <p className="text-sm font-medium leading-none">{getDisplayName(user.username)}</p>
-                  <p className="text-xs leading-none text-muted-foreground">
-                    {user.role.charAt(0).toUpperCase() + user.role.slice(1)}
-                  </p>
-                </div>
-              </DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={handleLogout}>
-                <LogOut className="mr-2 h-4 w-4" />
-                <span>Log out</span>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" className="relative h-8 w-8 rounded-full">
+                  <Avatar className="h-8 w-8">
+                    {user.profilePicture ? (
+                      <AvatarImage src={user.profilePicture} alt={user.username} />
+                    ) : (
+                      <AvatarImage src={getAvatarSrc(user.role)} alt={user.username} />
+                    )}
+                    <AvatarFallback>{getInitials(user.username)}</AvatarFallback>
+                  </Avatar>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="w-56" align="end" forceMount>
+                <DropdownMenuLabel className="font-normal">
+                  <div className="flex flex-col space-y-1">
+                    <p className="text-sm font-medium leading-none">{getDisplayName(user.username)}</p>
+                    <p className="text-xs leading-none text-muted-foreground">
+                      {user.role.charAt(0).toUpperCase() + user.role.slice(1)}
+                    </p>
+                  </div>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={openProfileDialog}>
+                  <UserCircle className="mr-2 h-4 w-4" />
+                  <span>Edit Profile</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleLogout}>
+                  <LogOut className="mr-2 h-4 w-4" />
+                  <span>Log out</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            
+            <UserProfileDialog open={isProfileOpen} onOpenChange={setIsProfileOpen} />
+          </>
         )}
       </div>
     </header>
