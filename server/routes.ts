@@ -316,6 +316,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
+  // User endpoints
+  app.get("/api/users/search", async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ message: "Not authenticated" });
+      }
+      
+      const username = req.query.username?.toString();
+      if (!username) {
+        return res.status(400).json({ message: "Username parameter is required" });
+      }
+      
+      const user = await storage.getUserByUsername(username);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      // Don't return the password
+      const { password, ...safeUser } = user;
+      res.json(safeUser);
+    } catch (error) {
+      console.error("Error searching for user:", error);
+      res.status(500).json({ message: "Failed to search for user" });
+    }
+  });
+  
   // Collaborator routes
   app.get("/api/projects/:projectId/collaborators", async (req, res) => {
     try {

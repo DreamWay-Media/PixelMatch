@@ -7,7 +7,8 @@ import {
   User,
   PriorityType,
   DiscrepancyType,
-  StatusType
+  StatusType,
+  ProjectCollaborator
 } from "@shared/schema";
 
 export interface FileWithPreview extends File {
@@ -32,6 +33,10 @@ export interface ActivityWithUser extends Activity {
 
 export interface Collaborator extends User {
   status: 'online' | 'offline';
+}
+
+export interface ProjectCollaboratorWithUser extends ProjectCollaborator {
+  user: User;
 }
 
 export interface Coordinates {
