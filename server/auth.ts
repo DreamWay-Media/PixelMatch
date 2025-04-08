@@ -4,7 +4,6 @@ import { Express } from "express";
 import session from "express-session";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
-import MemoryStore from "memorystore";
 import { storage } from "./storage";
 import { User as SelectUser } from "@shared/schema";
 
@@ -15,7 +14,6 @@ declare global {
 }
 
 const scryptAsync = promisify(scrypt);
-const MemoryStoreSession = MemoryStore(session);
 
 // Password hash function
 async function hashPassword(password: string) {
@@ -38,9 +36,7 @@ export function setupAuth(app: Express) {
     secret: process.env.SESSION_SECRET || "pixelmatch_secret_key",
     resave: false,
     saveUninitialized: false,
-    store: new MemoryStoreSession({
-      checkPeriod: 86400000 // prune expired entries every 24h
-    }),
+    store: storage.sessionStore, // Use the storage's session store (PostgreSQL or memory)
     cookie: {
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
       sameSite: "lax",
