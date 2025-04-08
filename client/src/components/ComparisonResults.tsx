@@ -3,9 +3,11 @@ import { useQuery } from '@tanstack/react-query';
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { RefreshCwIcon, DownloadIcon, ZoomInIcon, ZoomOutIcon, MaximizeIcon, FilterIcon, MoreVerticalIcon, SendIcon, PlusCircleIcon } from "lucide-react";
+import { RefreshCwIcon, DownloadIcon, ZoomInIcon, ZoomOutIcon, MaximizeIcon, FilterIcon, MoreVerticalIcon, SendIcon, PlusCircleIcon, ScanIcon } from "lucide-react";
 import { ComparisonWithDiscrepancies, DiscrepancyWithComments } from '@/types';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
@@ -20,6 +22,7 @@ export default function ComparisonResults({ comparisonId }: ComparisonResultsPro
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
   const [newCommentText, setNewCommentText] = useState<string>("");
   const [zoom, setZoom] = useState<number>(1);
+  const [showDesign, setShowDesign] = useState<boolean>(false);
 
   const { data: comparison, isLoading, error, refetch } = useQuery<ComparisonWithDiscrepancies>({
     queryKey: [`/api/comparisons/${comparisonId}`],
@@ -90,6 +93,108 @@ export default function ComparisonResults({ comparisonId }: ComparisonResultsPro
   const handleZoomIn = () => setZoom(prev => Math.min(prev + 0.1, 2));
   const handleZoomOut = () => setZoom(prev => Math.max(prev - 0.1, 0.5));
   const handleResetZoom = () => setZoom(1);
+  
+  // Implement re-run comparison functionality
+  const handleReRunComparison = async () => {
+    try {
+      // Show toast to indicate that the analysis is being re-run
+      toast({
+        title: "Re-running Analysis",
+        description: "The comparison analysis is being re-run. This may take a moment.",
+      });
+      
+      // Fetch the comparison to get the image paths
+      const originalComparison = await apiRequest("GET", `/api/comparisons/${comparisonId}`);
+      const comparisonData = await originalComparison.json();
+      
+      // Make API call to re-run the comparison
+      const response = await apiRequest(
+        "POST", 
+        `/api/projects/${comparisonData.projectId}/recompare`, 
+        {
+          designImagePath: comparisonData.designImagePath,
+          websiteImagePath: comparisonData.websiteImagePath,
+          originalComparisonId: comparisonId
+        }
+      );
+      
+      // Get the new comparison data
+      const newComparisonData = await response.json();
+      
+      // Refetch the current comparison data
+      refetch();
+      
+      toast({
+        title: "Analysis Complete",
+        description: `Re-analysis found ${newComparisonData.discrepancies.length} discrepancies.`,
+      });
+    } catch (error) {
+      console.error("Error re-running comparison:", error);
+      toast({
+        title: "Error",
+        description: "Failed to re-run the comparison analysis. Please try again.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  // Implement export functionality
+  const handleExportReport = () => {
+    try {
+      if (!comparison) return;
+      
+      // Create a report object with the comparison details
+      const report = {
+        project: comparison.projectId,
+        comparisonId: comparison.id,
+        generatedAt: new Date().toISOString(),
+        websiteImage: comparison.websiteImagePath,
+        designImage: comparison.designImagePath,
+        discrepancies: filteredDiscrepancies.map(d => ({
+          id: d.id,
+          title: d.title,
+          description: d.description,
+          type: d.type,
+          priority: d.priority,
+          status: d.status,
+          comments: d.comments?.map(c => ({
+            content: c.content,
+            date: c.createdAt
+          }))
+        }))
+      };
+      
+      // Convert to JSON string
+      const reportJson = JSON.stringify(report, null, 2);
+      
+      // Create a download blob
+      const blob = new Blob([reportJson], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      
+      // Create and trigger a download link
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `pixelmatch-report-${comparison.id}-${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(a);
+      a.click();
+      
+      // Clean up
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      toast({
+        title: "Export Successful",
+        description: "The report has been exported successfully.",
+      });
+    } catch (error) {
+      console.error("Error exporting report:", error);
+      toast({
+        title: "Export Failed",
+        description: "Failed to export the report. Please try again.",
+        variant: "destructive"
+      });
+    }
+  };
 
   // Find the type class for discrepancy badge
   const getTypeClass = (type: string) => {
@@ -117,11 +222,11 @@ export default function ComparisonResults({ comparisonId }: ComparisonResultsPro
         <div className="flex justify-between items-center">
           <h3 className="text-lg font-medium text-gray-800">Comparison Results</h3>
           <div className="flex space-x-2">
-            <Button variant="outline" size="sm" className="flex items-center" onClick={() => refetch()}>
+            <Button variant="outline" size="sm" className="flex items-center" onClick={handleReRunComparison}>
               <RefreshCwIcon className="h-4 w-4 mr-1" />
               Re-run
             </Button>
-            <Button variant="outline" size="sm" className="flex items-center">
+            <Button variant="outline" size="sm" className="flex items-center" onClick={handleExportReport}>
               <DownloadIcon className="h-4 w-4 mr-1" />
               Export
             </Button>
@@ -140,6 +245,17 @@ export default function ComparisonResults({ comparisonId }: ComparisonResultsPro
               </Badge>
             </div>
             <div className="flex items-center space-x-2">
+              <div className="flex items-center space-x-2 mr-2">
+                <Label htmlFor="view-mode" className="text-sm text-gray-500">
+                  {showDesign ? "Design" : "Website"}
+                </Label>
+                <Switch
+                  id="view-mode"
+                  checked={showDesign}
+                  onCheckedChange={setShowDesign}
+                  aria-label="Toggle between design and website view"
+                />
+              </div>
               <Button variant="ghost" size="icon" onClick={handleZoomIn}>
                 <ZoomInIcon className="h-4 w-4" />
               </Button>
@@ -156,16 +272,16 @@ export default function ComparisonResults({ comparisonId }: ComparisonResultsPro
             {/* Mock image for comparison view */}
             <div className="w-full h-full flex items-center justify-center">
               <div className="text-gray-400">
-                {comparison.websiteImagePath ? (
+                {(showDesign ? comparison.designImagePath : comparison.websiteImagePath) ? (
                   <div style={{ transform: `scale(${zoom})`, transformOrigin: 'center', transition: 'transform 0.2s' }}>
                     <img 
-                      src={`/${comparison.websiteImagePath}`} 
-                      alt="Website comparison" 
+                      src={`/${showDesign ? comparison.designImagePath : comparison.websiteImagePath}`} 
+                      alt={showDesign ? "Design mockup" : "Website implementation"} 
                       className="max-w-full max-h-[400px]"
                     />
                     
-                    {/* Discrepancy Markers */}
-                    {filteredDiscrepancies.map(discrepancy => {
+                    {/* Only show discrepancy markers on website view, not design view */}
+                    {!showDesign && filteredDiscrepancies.map(discrepancy => {
                       const coords = discrepancy.coordinates as any;
                       const isSelected = selectedDiscrepancy === discrepancy.id;
                       
@@ -190,7 +306,7 @@ export default function ComparisonResults({ comparisonId }: ComparisonResultsPro
                     })}
                   </div>
                 ) : (
-                  <p>No comparison image available</p>
+                  <p>No {showDesign ? "design" : "website"} image available</p>
                 )}
               </div>
             </div>

@@ -189,6 +189,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
     }
   );
+  
+  // Re-compare endpoint - reuse existing design and website images
+  app.post(
+    "/api/projects/:projectId/recompare",
+    async (req: Request, res: Response) => {
+      try {
+        const projectId = parseInt(req.params.projectId);
+        const project = await storage.getProject(projectId);
+        
+        if (!project) {
+          return res.status(404).json({ message: "Project not found" });
+        }
+        
+        // Get image paths from request body
+        const { designImagePath, websiteImagePath, originalComparisonId } = req.body;
+        
+        if (!designImagePath || !websiteImagePath) {
+          return res.status(400).json({ message: "Both design and website image paths are required" });
+        }
+        
+        // Run comparison
+        const result = await compareImages(designImagePath, websiteImagePath, projectId);
+        
+        // Log activity
+        await storage.createActivity({
+          projectId,
+          type: "comparison_rerun", 
+          description: `Re-ran comparison analysis`,
+          userId: req.user?.id || null
+        });
+        
+        res.status(201).json(result);
+      } catch (error) {
+        console.error("Error re-running comparison:", error);
+        res.status(500).json({ message: "Failed to re-run comparison" });
+      }
+    }
+  );
 
   // Discrepancy endpoints
   app.get("/api/comparisons/:comparisonId/discrepancies", async (req, res) => {
