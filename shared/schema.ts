@@ -1,4 +1,5 @@
-import { pgTable, text, serial, integer, boolean, timestamp, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, jsonb, primaryKey } from "drizzle-orm/pg-core";
+import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -97,8 +98,94 @@ export const insertActivitySchema = createInsertSchema(activities).pick({
   description: true,
 });
 
+// Project collaborators table - junction table between projects and users
+export const projectCollaborators = pgTable("project_collaborators", {
+  projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  status: text("status").notNull().default("active"),
+  role: text("role").notNull(),
+  addedAt: timestamp("added_at").notNull().defaultNow(),
+  lastActiveAt: timestamp("last_active_at").notNull().defaultNow(),
+}, (table) => {
+  return {
+    pk: primaryKey(table.projectId, table.userId),
+  }
+});
+
+export const insertProjectCollaboratorSchema = createInsertSchema(projectCollaborators).pick({
+  projectId: true,
+  userId: true,
+  role: true,
+  status: true,
+});
+
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
+
+export type ProjectCollaborator = typeof projectCollaborators.$inferSelect;
+export type InsertProjectCollaborator = z.infer<typeof insertProjectCollaboratorSchema>;
+
+// Define relations
+export const usersRelations = relations(users, ({ many }) => ({
+  projectCollaborations: many(projectCollaborators),
+  comments: many(comments),
+  activities: many(activities),
+}));
+
+export const projectsRelations = relations(projects, ({ many }) => ({
+  collaborators: many(projectCollaborators),
+  comparisons: many(comparisons),
+  activities: many(activities),
+}));
+
+export const projectCollaboratorsRelations = relations(projectCollaborators, ({ one }) => ({
+  user: one(users, {
+    fields: [projectCollaborators.userId],
+    references: [users.id],
+  }),
+  project: one(projects, {
+    fields: [projectCollaborators.projectId],
+    references: [projects.id],
+  }),
+}));
+
+export const comparisonsRelations = relations(comparisons, ({ one, many }) => ({
+  project: one(projects, {
+    fields: [comparisons.projectId],
+    references: [projects.id],
+  }),
+  discrepancies: many(discrepancies),
+}));
+
+export const discrepanciesRelations = relations(discrepancies, ({ one, many }) => ({
+  comparison: one(comparisons, {
+    fields: [discrepancies.comparisonId],
+    references: [comparisons.id],
+  }),
+  comments: many(comments),
+}));
+
+export const commentsRelations = relations(comments, ({ one }) => ({
+  discrepancy: one(discrepancies, {
+    fields: [comments.discrepancyId],
+    references: [discrepancies.id],
+  }),
+  user: one(users, {
+    fields: [comments.userId],
+    references: [users.id],
+  }),
+}));
+
+export const activitiesRelations = relations(activities, ({ one }) => ({
+  project: one(projects, {
+    fields: [activities.projectId],
+    references: [projects.id],
+  }),
+  user: one(users, {
+    fields: [activities.userId],
+    references: [users.id],
+  }),
+}));
 
 export type Project = typeof projects.$inferSelect;
 export type InsertProject = z.infer<typeof insertProjectSchema>;
@@ -134,10 +221,15 @@ export const ActivityTypes = [
   "discrepancy_added", 
   "discrepancy_updated", 
   "comment_added", 
-  "user_invited"
+  "user_invited",
+  "collaborator_added"
 ] as const;
 export type ActivityType = typeof ActivityTypes[number];
 
 // User role types
 export const RoleTypes = ["user", "designer", "developer", "qa"] as const;
 export type RoleType = typeof RoleTypes[number];
+
+// Collaborator status types
+export const CollaboratorStatusTypes = ["pending", "active", "inactive"] as const;
+export type CollaboratorStatusType = typeof CollaboratorStatusTypes[number];

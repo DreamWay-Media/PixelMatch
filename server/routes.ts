@@ -315,6 +315,112 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Failed to fetch activities" });
     }
   });
+  
+  // Collaborator routes
+  app.get("/api/projects/:projectId/collaborators", async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ message: "Not authenticated" });
+      }
+      
+      const projectId = parseInt(req.params.projectId);
+      const collaborators = await storage.getProjectCollaborators(projectId);
+      res.json(collaborators);
+    } catch (error) {
+      console.error("Error fetching collaborators:", error);
+      res.status(500).json({ message: "Failed to fetch collaborators" });
+    }
+  });
+  
+  app.post("/api/projects/:projectId/collaborators", async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ message: "Not authenticated" });
+      }
+      
+      const projectId = parseInt(req.params.projectId);
+      const userId = req.body.userId;
+      const role = req.body.role;
+      const status = req.body.status || "active";
+      
+      // Check if project exists
+      const project = await storage.getProject(projectId);
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      
+      // Check if user exists
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      // Check if collaborator already exists
+      const existingCollaborator = await storage.getProjectCollaborator(projectId, userId);
+      if (existingCollaborator) {
+        return res.status(409).json({ message: "User is already a collaborator on this project" });
+      }
+      
+      const collaborator = await storage.addProjectCollaborator({
+        projectId,
+        userId,
+        role,
+        status
+      });
+      
+      // Create an activity record for the addition
+      await storage.createActivity({
+        projectId,
+        userId: req.user?.id,
+        type: "collaborator_added",
+        description: `${req.user?.username || 'A user'} added ${user.username} as a ${role} to the project`
+      });
+      
+      res.status(201).json(collaborator);
+    } catch (error) {
+      console.error("Error adding collaborator:", error);
+      res.status(500).json({ message: "Failed to add collaborator" });
+    }
+  });
+  
+  app.delete("/api/projects/:projectId/collaborators/:userId", async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ message: "Not authenticated" });
+      }
+      
+      const projectId = parseInt(req.params.projectId);
+      const userId = parseInt(req.params.userId);
+      
+      // Check if collaborator exists
+      const collaborator = await storage.getProjectCollaborator(projectId, userId);
+      if (!collaborator) {
+        return res.status(404).json({ message: "Collaborator not found" });
+      }
+      
+      const success = await storage.removeProjectCollaborator(projectId, userId);
+      
+      if (success) {
+        // Get the user details for the activity log
+        const user = await storage.getUser(userId);
+        
+        // Create an activity record for the removal
+        await storage.createActivity({
+          projectId,
+          userId: req.user?.id,
+          type: "collaborator_removed",
+          description: `${req.user?.username || 'A user'} removed ${user?.username || 'a user'} from the project`
+        });
+        
+        res.status(204).end();
+      } else {
+        res.status(500).json({ message: "Failed to remove collaborator" });
+      }
+    } catch (error) {
+      console.error("Error removing collaborator:", error);
+      res.status(500).json({ message: "Failed to remove collaborator" });
+    }
+  });
 
   const httpServer = createServer(app);
   return httpServer;

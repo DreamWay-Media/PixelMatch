@@ -4,9 +4,10 @@ import {
   discrepancies, type Discrepancy, type InsertDiscrepancy,
   comments, type Comment, type InsertComment,
   activities, type Activity, type InsertActivity,
-  users, type User, type InsertUser
+  users, type User, type InsertUser,
+  projectCollaborators, type ProjectCollaborator, type InsertProjectCollaborator
 } from "@shared/schema";
-import { eq } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { db, pool } from "./db";
 import session from "express-session";
 import connectPg from "connect-pg-simple";
@@ -45,6 +46,13 @@ export interface IStorage {
   // Activity operations
   getActivities(projectId?: number): Promise<Activity[]>;
   createActivity(activity: InsertActivity): Promise<Activity>;
+  
+  // Project Collaborators operations
+  getProjectCollaborators(projectId: number): Promise<(ProjectCollaborator & { user: User })[]>;
+  getProjectCollaborator(projectId: number, userId: number): Promise<ProjectCollaborator | undefined>;
+  addProjectCollaborator(collaborator: InsertProjectCollaborator): Promise<ProjectCollaborator>;
+  updateProjectCollaborator(projectId: number, userId: number, data: Partial<ProjectCollaborator>): Promise<ProjectCollaborator | undefined>;
+  removeProjectCollaborator(projectId: number, userId: number): Promise<boolean>;
 }
 
 export class MemStorage implements IStorage {
@@ -90,10 +98,12 @@ export class MemStorage implements IStorage {
     });
     
     // Temporary store until the dynamic import completes
-    this.sessionStore = new session.Store();
+    this.sessionStore = session.Store ? new session.Store() : {} as session.Store;
     
     // Initialize with sample data for development
-    this.initializeSampleData();
+    this.initializeSampleData().catch(err => {
+      console.error("Error initializing sample data:", err);
+    });
   }
 
   // User operations
@@ -260,31 +270,134 @@ export class MemStorage implements IStorage {
     return activity;
   }
   
-  private initializeSampleData() {
-    // Create a few users
-    const user1 = this.createUser({
-      username: "sarah_designer",
-      email: "sarah@example.com", 
-      password: "password", 
-      role: "designer"
-    });
+  // Project Collaborator operations
+  private projectCollaborators: Map<string, ProjectCollaborator> = new Map();
+
+  async getProjectCollaborators(projectId: number): Promise<(ProjectCollaborator & { user: User })[]> {
+    const collaborators: (ProjectCollaborator & { user: User })[] = [];
     
-    const user2 = this.createUser({
-      username: "tom_developer",
-      email: "tom@example.com", 
-      password: "password", 
-      role: "developer"
-    });
+    for (const collaborator of this.projectCollaborators.values()) {
+      if (collaborator.projectId === projectId) {
+        const user = this.users.get(collaborator.userId);
+        if (user) {
+          collaborators.push({ ...collaborator, user });
+        }
+      }
+    }
     
-    const user3 = this.createUser({
-      username: "mark_qa",
-      email: "mark@example.com", 
-      password: "password", 
-      role: "qa"
-    });
+    return collaborators;
+  }
+  
+  async getProjectCollaborator(projectId: number, userId: number): Promise<ProjectCollaborator | undefined> {
+    return this.projectCollaborators.get(`${projectId}_${userId}`);
+  }
+  
+  async addProjectCollaborator(collaborator: InsertProjectCollaborator): Promise<ProjectCollaborator> {
+    const now = new Date();
+    const fullCollaborator: ProjectCollaborator = {
+      ...collaborator,
+      addedAt: now,
+      lastActiveAt: now
+    };
     
-    // Create a sample project
-    const project = this.createProject({ name: "Homepage Redesign" });
+    this.projectCollaborators.set(`${collaborator.projectId}_${collaborator.userId}`, fullCollaborator);
+    
+    // Update project's collaborator count
+    const project = this.projects.get(collaborator.projectId);
+    if (project) {
+      this.projects.set(project.id, {
+        ...project,
+        collaborators: project.collaborators + 1
+      });
+    }
+    
+    return fullCollaborator;
+  }
+  
+  async updateProjectCollaborator(
+    projectId: number, 
+    userId: number, 
+    data: Partial<ProjectCollaborator>
+  ): Promise<ProjectCollaborator | undefined> {
+    const key = `${projectId}_${userId}`;
+    const collaborator = this.projectCollaborators.get(key);
+    
+    if (!collaborator) return undefined;
+    
+    const updatedCollaborator = {
+      ...collaborator,
+      ...data,
+      lastActiveAt: new Date()
+    };
+    
+    this.projectCollaborators.set(key, updatedCollaborator);
+    return updatedCollaborator;
+  }
+  
+  async removeProjectCollaborator(projectId: number, userId: number): Promise<boolean> {
+    const key = `${projectId}_${userId}`;
+    const collaborator = this.projectCollaborators.get(key);
+    
+    if (!collaborator) return false;
+    
+    this.projectCollaborators.delete(key);
+    
+    // Update project's collaborator count
+    const project = this.projects.get(projectId);
+    if (project) {
+      this.projects.set(project.id, {
+        ...project,
+        collaborators: Math.max(0, project.collaborators - 1)
+      });
+    }
+    
+    return true;
+  }
+
+  private async initializeSampleData() {
+    try {
+      // Create a few users
+      const user1 = await this.createUser({
+        username: "sarah_designer",
+        email: "sarah@example.com", 
+        password: "password", 
+        role: "designer"
+      });
+      
+      const user2 = await this.createUser({
+        username: "tom_developer",
+        email: "tom@example.com", 
+        password: "password", 
+        role: "developer"
+      });
+      
+      const user3 = await this.createUser({
+        username: "mark_qa",
+        email: "mark@example.com", 
+        password: "password", 
+        role: "qa"
+      });
+      
+      // Create a sample project
+      const project = await this.createProject({ name: "Homepage Redesign" });
+
+      // Add sample collaborators
+      await this.addProjectCollaborator({
+        projectId: project.id,
+        userId: user1.id,
+        role: "designer",
+        status: "active"
+      });
+
+      await this.addProjectCollaborator({
+        projectId: project.id,
+        userId: user2.id,
+        role: "developer",
+        status: "active"
+      });
+    } catch (error) {
+      console.error("Error initializing sample data:", error);
+    }
   }
 }
 
@@ -420,6 +533,118 @@ export class DatabaseStorage implements IStorage {
   async createActivity(insertActivity: InsertActivity): Promise<Activity> {
     const [activity] = await db.insert(activities).values(insertActivity).returning();
     return activity;
+  }
+
+  // Project Collaborators operations
+  async getProjectCollaborators(projectId: number): Promise<(ProjectCollaborator & { user: User })[]> {
+    // First get all collaborators for the project
+    const projectCollabs = await db
+      .select()
+      .from(projectCollaborators)
+      .where(eq(projectCollaborators.projectId, projectId));
+    
+    // Then for each collaborator, get the user information
+    const result: (ProjectCollaborator & { user: User })[] = [];
+    
+    for (const collab of projectCollabs) {
+      const [user] = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, collab.userId));
+      
+      if (user) {
+        result.push({ ...collab, user });
+      }
+    }
+    
+    return result;
+  }
+  
+  async getProjectCollaborator(projectId: number, userId: number): Promise<ProjectCollaborator | undefined> {
+    const [collaborator] = await db
+      .select()
+      .from(projectCollaborators)
+      .where(
+        and(
+          eq(projectCollaborators.projectId, projectId),
+          eq(projectCollaborators.userId, userId)
+        )
+      );
+    
+    return collaborator;
+  }
+  
+  async addProjectCollaborator(collaborator: InsertProjectCollaborator): Promise<ProjectCollaborator> {
+    // Insert the collaborator
+    const [newCollaborator] = await db
+      .insert(projectCollaborators)
+      .values(collaborator)
+      .returning();
+    
+    // Update the project's collaborator count
+    // First count the collaborators for this project
+    const collabCount = await db
+      .select({ count: sql`count(*)::int` })
+      .from(projectCollaborators)
+      .where(eq(projectCollaborators.projectId, collaborator.projectId));
+    
+    // Then update the project
+    await db
+      .update(projects)
+      .set({ collaborators: collabCount[0].count })
+      .where(eq(projects.id, collaborator.projectId));
+    
+    return newCollaborator;
+  }
+  
+  async updateProjectCollaborator(
+    projectId: number, 
+    userId: number, 
+    data: Partial<ProjectCollaborator>
+  ): Promise<ProjectCollaborator | undefined> {
+    const [updatedCollaborator] = await db
+      .update(projectCollaborators)
+      .set({ ...data, lastActiveAt: new Date() })
+      .where(
+        and(
+          eq(projectCollaborators.projectId, projectId),
+          eq(projectCollaborators.userId, userId)
+        )
+      )
+      .returning();
+    
+    return updatedCollaborator;
+  }
+  
+  async removeProjectCollaborator(projectId: number, userId: number): Promise<boolean> {
+    // Delete the collaborator
+    const result = await db
+      .delete(projectCollaborators)
+      .where(
+        and(
+          eq(projectCollaborators.projectId, projectId),
+          eq(projectCollaborators.userId, userId)
+        )
+      );
+    
+    if (result.rowCount === 0) {
+      return false;
+    }
+    
+    // Update the project's collaborator count
+    // First count the collaborators for this project
+    const collabCount = await db
+      .select({ count: sql`count(*)::int` })
+      .from(projectCollaborators)
+      .where(eq(projectCollaborators.projectId, projectId));
+    
+    // Then update the project
+    await db
+      .update(projects)
+      .set({ collaborators: collabCount[0].count })
+      .where(eq(projects.id, projectId));
+    
+    return true;
   }
 }
 
