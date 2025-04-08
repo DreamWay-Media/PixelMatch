@@ -7,6 +7,7 @@ import { z } from "zod";
 import { insertProjectSchema, insertDiscrepancySchema, insertCommentSchema } from "@shared/schema";
 import path from "path";
 import fs from "fs";
+import { setupAuth } from "./auth";
 
 // Configure multer for in-memory storage
 const upload = multer({ 
@@ -14,7 +15,7 @@ const upload = multer({
   limits: {
     fileSize: 20 * 1024 * 1024, // 20MB file size limit
   },
-  fileFilter: (req, file, cb) => {
+  fileFilter: (req: any, file: any, cb: any) => {
     // Accept only image files and PDFs
     const allowedFileTypes = ['image/jpeg', 'image/png', 'application/pdf'];
     if (allowedFileTypes.includes(file.mimetype)) {
@@ -26,6 +27,9 @@ const upload = multer({
 });
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Setup authentication
+  setupAuth(app);
+  
   // Create uploads directory if it doesn't exist
   const uploadsDir = path.join(process.cwd(), "uploads");
   if (!fs.existsSync(uploadsDir)) {
@@ -152,7 +156,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
         
         // Check if files were uploaded
-        const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+        const files = req.files as { [fieldname: string]: any[] };
         
         if (!files.design || !files.website) {
           return res.status(400).json({ message: "Both design and website files are required" });
@@ -171,8 +175,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.status(201).json(result);
       } catch (error) {
         console.error("Error processing comparison:", error);
-        if (error instanceof multer.MulterError) {
-          return res.status(400).json({ message: error.message });
+        const multerError = error as any;
+        if (multerError && multerError.code === 'LIMIT_FILE_SIZE') {
+          return res.status(400).json({ message: "File size exceeds 20MB limit" });
         }
         res.status(500).json({ message: "Failed to process comparison" });
       }
