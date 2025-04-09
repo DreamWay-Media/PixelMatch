@@ -297,9 +297,16 @@ export default function ComparisonResults({ comparisonId }: ComparisonResultsPro
                 {(showDesign ? comparison.designImagePath : comparison.websiteImagePath) ? (
                   <div style={{ transform: `scale(${zoom})`, transformOrigin: 'center', transition: 'transform 0.2s' }}>
                     <img 
-                      src={`/${showDesign ? comparison.designImagePath : comparison.websiteImagePath}`} 
+                      src={`/${(showDesign ? comparison.designImagePath : comparison.websiteImagePath).startsWith('/') ? 
+                        (showDesign ? comparison.designImagePath : comparison.websiteImagePath).substring(1) : 
+                        (showDesign ? comparison.designImagePath : comparison.websiteImagePath)}`} 
                       alt={showDesign ? "Design mockup" : "Website implementation"} 
                       className="max-w-full max-h-[400px]"
+                      onError={(e) => {
+                        console.log('Image failed to load:', showDesign ? comparison.designImagePath : comparison.websiteImagePath);
+                        const target = e.target as HTMLImageElement;
+                        target.src = '/uploads/placeholder.png';
+                      }}
                     />
                     
                     {/* Only show discrepancy markers on website view, not design view */}

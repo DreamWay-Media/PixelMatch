@@ -251,10 +251,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } catch (error) {
         console.error("Error processing comparison:", error);
         const multerError = error as any;
+        
         if (multerError && multerError.code === 'LIMIT_FILE_SIZE') {
           return res.status(400).json({ message: "File size exceeds 20MB limit" });
         }
-        res.status(500).json({ message: "Failed to process comparison" });
+        
+        // Log detailed error for debugging
+        console.error("Comparison error details:", {
+          projectId: req.params.projectId,
+          files: req.files ? Object.keys(req.files as object) : 'No files',
+          error: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined
+        });
+        
+        res.status(500).json({ 
+          message: "Failed to process comparison. Please try again or contact support.",
+          error: error instanceof Error ? error.message : "Unknown error"
+        });
       }
     }
   );
@@ -315,7 +328,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.status(201).json(result);
       } catch (error) {
         console.error("Error re-running comparison:", error);
-        res.status(500).json({ message: "Failed to re-run comparison" });
+        
+        // Log detailed error for debugging
+        console.error("Recompare error details:", {
+          projectId: req.params.projectId,
+          designImagePath: req.body.designImagePath,
+          websiteImagePath: req.body.websiteImagePath,
+          error: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined
+        });
+        
+        res.status(500).json({ 
+          message: "Failed to re-run comparison. Please try again or contact support.",
+          error: error instanceof Error ? error.message : "Unknown error"
+        });
       }
     }
   );

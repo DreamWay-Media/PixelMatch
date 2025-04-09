@@ -245,8 +245,10 @@ export async function saveUploadedFile(file: Express.Multer.File): Promise<strin
     // Save the file
     await fs.writeFile(filepath, file.buffer);
     
-    // Return the relative path
-    return path.join('uploads', filename);
+    // Return the relative path with consistent forward slash format
+    const relativePath = path.join('uploads', filename);
+    // Ensure the path uses forward slashes and doesn't have a leading slash
+    return relativePath.replace(/\\/g, '/');
   } catch (error) {
     console.error("Error saving file:", error);
     throw error;
