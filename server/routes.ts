@@ -198,6 +198,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       { name: 'website', maxCount: 1 }
     ]),
     async (req: Request, res: Response) => {
+      // Validate file types for security
+      const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+      const allowedMimeTypes = ['image/jpeg', 'image/png', 'application/pdf'];
+      
+      if (files.design && files.website) {
+        const designFile = files.design[0];
+        const websiteFile = files.website[0];
+        
+        if (!allowedMimeTypes.includes(designFile.mimetype) || !allowedMimeTypes.includes(websiteFile.mimetype)) {
+          return res.status(400).json({ 
+            message: "Invalid file type. Only JPEG, PNG and PDF files are allowed." 
+          });
+        }
+      }
       try {
         const projectId = parseInt(req.params.projectId);
         const project = await storage.getProject(projectId);
@@ -520,18 +534,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         const userId = req.user!.id;
         
-        // Generate a unique filename with user id
-        const fileExtension = path.extname(req.file.originalname);
-        const filename = `user_${userId}_${Date.now()}${fileExtension}`;
-        const profilePicPath = path.join("profiles", filename);
-        const absolutePath = path.join(uploadsDir, profilePicPath);
+        // Validate file type for security
+        const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/gif'];
+        if (!allowedMimeTypes.includes(req.file.mimetype)) {
+          return res.status(400).json({ 
+            message: "Invalid file type. Only JPEG, PNG and GIF files are allowed for profile pictures." 
+          });
+        }
         
-        // Save file to the profiles folder
-        fs.writeFileSync(absolutePath, req.file.buffer);
+        // Generate a unique filename with user id and sanitize the filename
+        const fileExtension = path.extname(req.file.originalname).replace(/[^a-zA-Z0-9-.]/g, '');
+        const filename = `user_${userId}_${Date.now()}${fileExtension}`;
+        
+        // Use the more secure saveUploadedFile function
+        const profilePicPath = await saveUploadedFile({
+          ...req.file,
+          originalname: filename // Use our sanitized filename
+        });
         
         // Update user profile in the database
         const user = await storage.updateUser(userId, {
-          profilePicture: `/uploads/${profilePicPath}`
+          profilePicture: `/${profilePicPath}`
         });
         
         if (!user) {

@@ -234,16 +234,22 @@ export async function saveUploadedFile(file: Express.Multer.File): Promise<strin
   const uploadsDir = path.join(process.cwd(), 'uploads');
   
   try {
-    // Create uploads directory if it doesn't exist
-    await fs.mkdir(uploadsDir, { recursive: true });
+    // Create uploads directory if it doesn't exist with proper permissions
+    try {
+      await fs.access(uploadsDir);
+    } catch (err) {
+      // Directory doesn't exist, create it with proper permissions
+      await fs.mkdir(uploadsDir, { recursive: true, mode: 0o755 });
+    }
     
-    // Generate unique filename
+    // Generate unique filename with timestamp to prevent collisions
     const timestamp = Date.now();
-    const filename = `${timestamp}-${file.originalname}`;
+    const sanitizedFilename = file.originalname.replace(/[^a-zA-Z0-9-_.]/g, '_'); // Sanitize filename
+    const filename = `${timestamp}-${sanitizedFilename}`;
     const filepath = path.join(uploadsDir, filename);
     
-    // Save the file
-    await fs.writeFile(filepath, file.buffer);
+    // Save the file with proper permissions
+    await fs.writeFile(filepath, file.buffer, { mode: 0o644 }); // Owner: rw, Group/Others: r
     
     // Return the relative path with consistent forward slash format
     const relativePath = path.join('uploads', filename);
