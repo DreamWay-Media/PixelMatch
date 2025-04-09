@@ -7,6 +7,7 @@ import UploadSection from '@/components/UploadSection';
 import ComparisonResults from '@/components/ComparisonResults';
 import TeamCollaboration from '@/components/TeamCollaboration';
 import CreateReportDialog from '@/components/CreateReportDialog';
+import ProjectComparisons from '@/components/ProjectComparisons';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { apiRequest } from '@/lib/queryClient';
@@ -165,6 +166,16 @@ export default function Home() {
           {/* Comparison Results */}
           {showResults && activeComparisonId && (
             <ComparisonResults comparisonId={activeComparisonId} />
+          )}
+          
+          {/* Project Comparisons Section - Only shown when not viewing a specific comparison */}
+          {activeProjectId && !showResults && (
+            <div className="bg-white rounded-lg shadow-sm p-4 mb-4">
+              <ProjectComparisons 
+                projectId={activeProjectId} 
+                onSelectComparison={handleComparisonComplete} 
+              />
+            </div>
           )}
           
           {/* Team Collaboration */}
