@@ -6,7 +6,9 @@ import Footer from '@/components/Footer';
 import UploadSection from '@/components/UploadSection';
 import ComparisonResults from '@/components/ComparisonResults';
 import TeamCollaboration from '@/components/TeamCollaboration';
+import CreateReportDialog from '@/components/CreateReportDialog';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { apiRequest } from '@/lib/queryClient';
 import { ProjectWithDetails } from '@/types';
 
@@ -138,12 +140,26 @@ export default function Home() {
             </div>
           )}
 
-          {/* Upload Section */}
+          {/* Tools Section */}
           {activeProjectId && !showResults && (
-            <UploadSection 
-              projectId={activeProjectId} 
-              onComparisonComplete={handleComparisonComplete} 
-            />
+            <div className="mb-4">
+              <div className="bg-white rounded-lg shadow-sm p-4 mb-4">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-medium text-gray-800">Create New Report</h3>
+                  <CreateReportDialog 
+                    projects={projects || []} 
+                    projectId={activeProjectId}
+                    onReportCreated={handleComparisonComplete}
+                  />
+                </div>
+                <p className="text-sm text-gray-600">Create detailed comparisons between design mockups and website implementations.</p>
+              </div>
+              
+              <UploadSection 
+                projectId={activeProjectId} 
+                onComparisonComplete={handleComparisonComplete} 
+              />
+            </div>
           )}
           
           {/* Comparison Results */}

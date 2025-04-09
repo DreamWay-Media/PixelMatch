@@ -4,16 +4,30 @@ import { storage } from "../storage";
 import { InsertComparison, InsertDiscrepancy } from "@shared/schema";
 
 // Mock AI comparison for the MVP
-export async function compareImages(designPath: string, websitePath: string, projectId: number) {
+export async function compareImages(designPath: string, websitePath: string, projectId: number, existingComparisonId?: number) {
   try {
-    // First, create a comparison record
-    const comparisonData: InsertComparison = {
-      projectId,
-      designImagePath: designPath,
-      websiteImagePath: websitePath
-    };
+    // If we already have a comparison ID, use that instead of creating a new one
+    let comparison;
     
-    const comparison = await storage.createComparison(comparisonData);
+    if (existingComparisonId) {
+      comparison = await storage.getComparison(existingComparisonId);
+      if (!comparison) {
+        throw new Error(`Comparison with ID ${existingComparisonId} not found`);
+      }
+    } else {
+      // First, create a comparison record
+      const comparisonData: InsertComparison = {
+        projectId,
+        name: `Comparison ${new Date().toLocaleDateString()}`,
+        description: "Automated design vs website comparison",
+        designImagePath: designPath,
+        websiteImagePath: websitePath,
+        status: "completed",
+        createdAt: new Date()
+      };
+      
+      comparison = await storage.createComparison(comparisonData);
+    }
     
     // Update the comparison with the current timestamp
     await storage.updateComparison(comparison.id, {

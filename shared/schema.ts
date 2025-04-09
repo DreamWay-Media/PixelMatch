@@ -37,16 +37,23 @@ export const insertProjectSchema = createInsertSchema(projects).pick({
 export const comparisons = pgTable("comparisons", {
   id: serial("id").primaryKey(),
   projectId: integer("project_id").notNull(),
+  name: text("name"),
+  description: text("description"),
   designImagePath: text("design_image_path").notNull(),
   websiteImagePath: text("website_image_path").notNull(),
+  status: text("status").notNull().default("pending"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   lastComparedAt: timestamp("last_compared_at"),
 });
 
 export const insertComparisonSchema = createInsertSchema(comparisons).pick({
   projectId: true,
+  name: true,
+  description: true,
   designImagePath: true,
-  websiteImagePath: true, 
+  websiteImagePath: true,
+  status: true,
+  createdAt: true
 });
 
 export const discrepancies = pgTable("discrepancies", {
@@ -98,6 +105,7 @@ export const insertActivitySchema = createInsertSchema(activities).pick({
   userId: true,
   type: true,
   description: true,
+  createdAt: true,
 });
 
 // Project collaborators table - junction table between projects and users
@@ -220,11 +228,14 @@ export type StatusType = typeof StatusTypes[number];
 export const ActivityTypes = [
   "project_created", 
   "comparison_run", 
+  "comparison_created",
+  "comparison_rerun",
   "discrepancy_added", 
   "discrepancy_updated", 
   "comment_added", 
   "user_invited",
-  "collaborator_added"
+  "collaborator_added",
+  "collaborator_removed"
 ] as const;
 export type ActivityType = typeof ActivityTypes[number];
 

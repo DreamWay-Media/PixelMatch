@@ -112,6 +112,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Failed to fetch comparisons" });
     }
   });
+  
+  // Create a new comparison (empty report that will be filled with image uploads later)
+  app.post("/api/projects/:projectId/comparisons", async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ message: "Not authenticated" });
+      }
+      
+      const projectId = parseInt(req.params.projectId);
+      const project = await storage.getProject(projectId);
+      
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      
+      // Get name and description from the request body
+      const { name, description, status } = req.body;
+      
+      // Create a new empty comparison record
+      const comparison = await storage.createComparison({
+        projectId,
+        name: name || `Report ${new Date().toLocaleDateString()}`,
+        description: description || `Report for project "${project.name}"`,
+        status: status || "pending",
+        // Use placeholder image paths until actual files are uploaded
+        designImagePath: "/uploads/placeholder.png",
+        websiteImagePath: "/uploads/placeholder.png",
+        createdAt: new Date()
+      });
+      
+      // Add activity for the new comparison
+      await storage.createActivity({
+        projectId,
+        type: "comparison_created",
+        description: `New report "${comparison.name}" created`,
+        userId: req.user?.id || null,
+        createdAt: new Date()
+      });
+      
+      res.status(201).json(comparison);
+    } catch (error) {
+      console.error("Error creating comparison:", error);
+      res.status(500).json({ message: "Failed to create comparison" });
+    }
+  });
 
   app.get("/api/comparisons/:id", async (req, res) => {
     try {
@@ -175,8 +220,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const designPath = await saveUploadedFile(designFile);
         const websitePath = await saveUploadedFile(websiteFile);
         
-        // Run comparison
-        const result = await compareImages(designPath, websitePath, projectId);
+        // Get report name and description from form data, if provided
+        const name = req.body.name || `Comparison ${new Date().toLocaleDateString()}`;
+        const description = req.body.description || `Automated comparison for project "${project.name}"`;
+        
+        // Create comparison record first with the provided name and description
+        const comparison = await storage.createComparison({
+          projectId,
+          name,
+          description,
+          designImagePath: designPath,
+          websiteImagePath: websitePath,
+          createdAt: new Date(),
+          status: "completed"
+        });
+        
+        // Run comparison analysis with the created comparison ID
+        const result = await compareImages(designPath, websitePath, projectId, comparison.id);
+        
+        // Add activity for the new comparison
+        await storage.createActivity({
+          projectId,
+          type: "comparison_created",
+          description: `New comparison "${name}" created with ${result.discrepancies.length} discrepancies`,
+          userId: req.user?.id || null,
+          createdAt: new Date()
+        });
         
         res.status(201).json(result);
       } catch (error) {
@@ -209,8 +278,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return res.status(400).json({ message: "Both design and website image paths are required" });
         }
         
-        // Run comparison
-        const result = await compareImages(designImagePath, websiteImagePath, projectId);
+        // Get the original comparison information for naming
+        let name = `Reanalysis ${new Date().toLocaleDateString()}`;
+        let description = "Re-run of previous comparison";
+        
+        if (originalComparisonId) {
+          const originalComparison = await storage.getComparison(parseInt(originalComparisonId));
+          if (originalComparison) {
+            name = `Reanalysis of "${originalComparison.name}"`;
+            description = `Re-run of comparison: ${originalComparison.description}`;
+          }
+        }
+        
+        // Create a new comparison record
+        const comparison = await storage.createComparison({
+          projectId,
+          name,
+          description,
+          designImagePath: designImagePath,
+          websiteImagePath: websiteImagePath,
+          createdAt: new Date(),
+          status: "completed"
+        });
+        
+        // Run comparison with the new comparison ID
+        const result = await compareImages(designImagePath, websiteImagePath, projectId, comparison.id);
         
         // Log activity
         await storage.createActivity({
