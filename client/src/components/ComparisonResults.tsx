@@ -297,7 +297,7 @@ export default function ComparisonResults({ comparisonId }: ComparisonResultsPro
                 {(showDesign ? comparison.designImagePath : comparison.websiteImagePath) ? (
                   <div style={{ transform: `scale(${zoom})`, transformOrigin: 'center', transition: 'transform 0.2s' }}>
                     <img 
-                      src={`/${showDesign ? comparison.designImagePath : comparison.websiteImagePath}`} 
+                      src={`${showDesign ? comparison.designImagePath : comparison.websiteImagePath}`} 
                       alt={showDesign ? "Design mockup" : "Website implementation"} 
                       className="max-w-full max-h-[400px]"
                     />

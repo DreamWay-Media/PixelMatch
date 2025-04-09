@@ -137,8 +137,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         description: description || `Report for project "${project.name}"`,
         status: status || "pending",
         // Use placeholder image paths until actual files are uploaded
-        designImagePath: "/uploads/placeholder.png",
-        websiteImagePath: "/uploads/placeholder.png",
+        designImagePath: "uploads/placeholder.png",
+        websiteImagePath: "uploads/placeholder.png",
         createdAt: new Date()
       });
       
