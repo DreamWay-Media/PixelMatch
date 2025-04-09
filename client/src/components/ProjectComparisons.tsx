@@ -53,7 +53,7 @@ export default function ProjectComparisons({ projectId, onSelectComparison }: Pr
                   // If image fails to load, use a fallback
                   console.log('Image failed to load:', comparison.websiteImagePath);
                   const target = e.target as HTMLImageElement;
-                  target.src = '/uploads/placeholder.png';
+                  target.src = '/uploads/no-image.svg';
                 }}
               />
               <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-3">

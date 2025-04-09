@@ -305,7 +305,7 @@ export default function ComparisonResults({ comparisonId }: ComparisonResultsPro
                       onError={(e) => {
                         console.log('Image failed to load:', showDesign ? comparison.designImagePath : comparison.websiteImagePath);
                         const target = e.target as HTMLImageElement;
-                        target.src = '/uploads/placeholder.png';
+                        target.src = '/uploads/no-image.svg';
                       }}
                     />
                     
