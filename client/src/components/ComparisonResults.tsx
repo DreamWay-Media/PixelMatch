@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -7,34 +7,149 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { RefreshCwIcon, DownloadIcon, ZoomInIcon, ZoomOutIcon, MaximizeIcon, FilterIcon, MoreVerticalIcon, SendIcon, PlusCircleIcon, ScanIcon } from "lucide-react";
+import { 
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { Textarea } from "@/components/ui/textarea";
+import { 
+  Dialog, 
+  DialogContent, 
+  DialogDescription, 
+  DialogFooter, 
+  DialogHeader, 
+  DialogTitle 
+} from "@/components/ui/dialog";
+import { 
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage
+} from "@/components/ui/form";
+import { RefreshCwIcon, DownloadIcon, ZoomInIcon, ZoomOutIcon, MaximizeIcon, FilterIcon, MoreVerticalIcon, SendIcon, PlusCircleIcon, ScanIcon, Pencil, Trash2 } from "lucide-react";
 import { ComparisonWithDiscrepancies, DiscrepancyWithComments } from '@/types';
 import { useToast } from '@/hooks/use-toast';
-import { apiRequest } from '@/lib/queryClient';
+import { apiRequest, queryClient } from '@/lib/queryClient';
+import { zodResolver } from "@hookform/resolvers/zod";
+import * as z from "zod";
+import { useForm } from "react-hook-form";
+
+// Define the schema outside of component to ensure it doesn't change between renders
+const discrepancyFormSchema = z.object({
+  title: z.string().min(3, { message: "Title must be at least 3 characters" }),
+  description: z.string().optional(), // Made description optional with no minimum length
+  type: z.enum(["color", "size", "typography", "position", "layout", "other"], {
+    required_error: "Please select a discrepancy type",
+  }),
+  priority: z.enum(["high", "medium", "low"], {
+    required_error: "Please select a priority level",
+  }),
+  coordinates: z.object({
+    x: z.number().min(0, { message: "X coordinate must be positive" }),
+    y: z.number().min(0, { message: "Y coordinate must be positive" }),
+    width: z.number().min(1, { message: "Width must be at least 1" }),
+    height: z.number().min(1, { message: "Height must be at least 1" }),
+    shape: z.enum(["rectangle", "circle"])
+  })
+});
+
+// Default form values outside component
+const formDefaultValues = {
+  title: "",
+  description: "",
+  type: "other" as const,
+  priority: "medium" as const,
+  coordinates: {
+    x: 100,
+    y: 100,
+    width: 100,
+    height: 100,
+    shape: "rectangle" as const
+  }
+};
 
 interface ComparisonResultsProps {
   comparisonId: number;
 }
 
 export default function ComparisonResults({ comparisonId }: ComparisonResultsProps) {
+  // Toast notifications
   const { toast } = useToast();
+  
+  // Query data
+  const { data: comparison, isLoading, error, refetch } = useQuery<ComparisonWithDiscrepancies>({
+    queryKey: [`/api/comparisons/${comparisonId}`],
+    enabled: !!comparisonId,
+  });
+  
+  // Basic UI state
   const [selectedDiscrepancy, setSelectedDiscrepancy] = useState<number | null>(null);
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
   const [newCommentText, setNewCommentText] = useState<string>("");
   const [zoom, setZoom] = useState<number>(1);
   const [showDesign, setShowDesign] = useState<boolean>(false);
-
-  const { data: comparison, isLoading, error, refetch } = useQuery<ComparisonWithDiscrepancies>({
-    queryKey: [`/api/comparisons/${comparisonId}`],
-    enabled: !!comparisonId,
+  
+  // Modal and drawing state
+  const [addDiscrepancyOpen, setAddDiscrepancyOpen] = useState<boolean>(false);
+  const [showDesignInModal, setShowDesignInModal] = useState<boolean>(false);
+  const [isDrawing, setIsDrawing] = useState<boolean>(false);
+  const [drawStartPos, setDrawStartPos] = useState<{x: number, y: number} | null>(null);
+  const [tempShape, setTempShape] = useState<{x: number, y: number, width: number, height: number} | null>(null);
+  const [editMode, setEditMode] = useState<boolean>(false);
+  const [editDiscrepancyId, setEditDiscrepancyId] = useState<number | null>(null);
+  
+  // Form setup
+  const form = useForm<z.infer<typeof discrepancyFormSchema>>({
+    resolver: zodResolver(discrepancyFormSchema),
+    defaultValues: formDefaultValues
   });
-
+  
+  // Select the first discrepancy when data loads
   useEffect(() => {
     if (comparison?.discrepancies?.length) {
       setSelectedDiscrepancy(comparison.discrepancies[0].id);
     }
   }, [comparison]);
-
+  
+  // Handle showing relevant discrepancies
+  const filteredDiscrepancies = comparison?.discrepancies?.filter(discrepancy => {
+    if (priorityFilter === "all") return true;
+    return discrepancy.priority === priorityFilter;
+  }) || [];
+  
+  // Update form coordinates when drawing changes
+  useEffect(() => {
+    if (tempShape) {
+      form.setValue("coordinates.x", tempShape.x);
+      form.setValue("coordinates.y", tempShape.y);
+      form.setValue("coordinates.width", tempShape.width);
+      form.setValue("coordinates.height", tempShape.height);
+    }
+  }, [tempShape, form]);
+  
+  // Reset drawing when dialog closes
+  useEffect(() => {
+    if (!addDiscrepancyOpen) {
+      setTempShape(null);
+      setDrawStartPos(null);
+      setIsDrawing(false);
+    }
+  }, [addDiscrepancyOpen]);
+  
+  // Loading state
   if (isLoading) {
     return (
       <div className="bg-white rounded-lg shadow-sm overflow-hidden mb-4 p-6">
@@ -44,7 +159,8 @@ export default function ComparisonResults({ comparisonId }: ComparisonResultsPro
       </div>
     );
   }
-
+  
+  // Error state
   if (error || !comparison) {
     return (
       <div className="bg-white rounded-lg shadow-sm overflow-hidden mb-4 p-6">
@@ -54,16 +170,13 @@ export default function ComparisonResults({ comparisonId }: ComparisonResultsPro
       </div>
     );
   }
-
-  const filteredDiscrepancies = comparison.discrepancies?.filter(discrepancy => {
-    if (priorityFilter === "all") return true;
-    return discrepancy.priority === priorityFilter;
-  }) || [];
-
+  
+  // Handlers below - define within the component but after conditional returns
+  
   const handleSelectDiscrepancy = (id: number) => {
     setSelectedDiscrepancy(id);
   };
-
+  
   const handleAddComment = async (discrepancyId: number) => {
     if (!newCommentText.trim()) return;
     
@@ -89,25 +202,21 @@ export default function ComparisonResults({ comparisonId }: ComparisonResultsPro
       });
     }
   };
-
+  
   const handleZoomIn = () => setZoom(prev => Math.min(prev + 0.1, 2));
   const handleZoomOut = () => setZoom(prev => Math.max(prev - 0.1, 0.5));
   const handleResetZoom = () => setZoom(1);
   
-  // Implement enhanced AI-powered re-run comparison functionality
   const handleReRunComparison = async () => {
     try {
-      // Show toast to indicate that the AI analysis is being re-run
       toast({
         title: "AI Re-analysis in Progress",
         description: "Our AI is performing a detailed pixel-perfect analysis. This may take a moment.",
       });
       
-      // Fetch the comparison to get the image paths
       const originalComparison = await apiRequest("GET", `/api/comparisons/${comparisonId}`);
       const comparisonData = await originalComparison.json();
       
-      // Make API call to re-run the comparison with enhanced AI
       const response = await apiRequest(
         "POST", 
         `/api/projects/${comparisonData.projectId}/recompare`, 
@@ -115,22 +224,18 @@ export default function ComparisonResults({ comparisonId }: ComparisonResultsPro
           designImagePath: comparisonData.designImagePath,
           websiteImagePath: comparisonData.websiteImagePath,
           originalComparisonId: comparisonId,
-          // Parameters that would be used in a real AI analysis
           enhancedAnalysis: true,
           detectionThreshold: 0.85,
           includeSemanticAnalysis: true
         }
       );
       
-      // Get the new comparison data
       const newComparisonData = await response.json();
       
-      // Calculate the metrics for better reporting
       const highPriorityCount = newComparisonData.discrepancies.filter(
         (d: any) => d.priority === "high"
       ).length;
       
-      // Refetch the current comparison data
       refetch();
       
       toast({
@@ -146,13 +251,11 @@ export default function ComparisonResults({ comparisonId }: ComparisonResultsPro
       });
     }
   };
-
-  // Implement export functionality
+  
   const handleExportReport = () => {
     try {
       if (!comparison) return;
       
-      // Create a report object with the comparison details
       const report = {
         project: comparison.projectId,
         comparisonId: comparison.id,
@@ -173,21 +276,17 @@ export default function ComparisonResults({ comparisonId }: ComparisonResultsPro
         }))
       };
       
-      // Convert to JSON string
       const reportJson = JSON.stringify(report, null, 2);
       
-      // Create a download blob
       const blob = new Blob([reportJson], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       
-      // Create and trigger a download link
       const a = document.createElement('a');
       a.href = url;
       a.download = `pixelmatch-report-${comparison.id}-${new Date().toISOString().split('T')[0]}.json`;
       document.body.appendChild(a);
       a.click();
       
-      // Clean up
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
       
@@ -204,8 +303,7 @@ export default function ComparisonResults({ comparisonId }: ComparisonResultsPro
       });
     }
   };
-
-  // Find the type class for discrepancy badge based on type
+  
   const getTypeClass = (type: string) => {
     switch (type) {
       case "color":
@@ -222,8 +320,7 @@ export default function ComparisonResults({ comparisonId }: ComparisonResultsPro
         return "bg-slate-100 text-slate-800";
     }
   };
-
-  // Find the priority class for discrepancy badge
+  
   const getPriorityClass = (priority: string) => {
     switch (priority) {
       case "high":
@@ -236,7 +333,137 @@ export default function ComparisonResults({ comparisonId }: ComparisonResultsPro
         return "bg-gray-100 text-gray-800";
     }
   };
-
+  
+  // Drawing handlers
+  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (showDesignInModal) return;
+    
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = Math.round(e.clientX - rect.left);
+    const y = Math.round(e.clientY - rect.top);
+    
+    setIsDrawing(true);
+    setDrawStartPos({ x, y });
+    setTempShape({
+      x,
+      y,
+      width: 0,
+      height: 0
+    });
+    
+    e.preventDefault();
+  };
+  
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!isDrawing || !drawStartPos) return;
+    
+    const rect = e.currentTarget.getBoundingClientRect();
+    const currentX = Math.round(e.clientX - rect.left);
+    const currentY = Math.round(e.clientY - rect.top);
+    
+    setTempShape({
+      x: Math.min(drawStartPos.x, currentX),
+      y: Math.min(drawStartPos.y, currentY),
+      width: Math.abs(currentX - drawStartPos.x),
+      height: Math.abs(currentY - drawStartPos.y)
+    });
+    
+    e.preventDefault();
+  };
+  
+  const handleMouseUp = () => {
+    if (isDrawing) {
+      setIsDrawing(false);
+    }
+  };
+  
+  const handleToggleDesignView = (value: boolean) => {
+    setShowDesignInModal(value);
+    if (value && isDrawing) {
+      setIsDrawing(false);
+      setDrawStartPos(null);
+    }
+  };
+  
+  const handleDeleteDiscrepancy = async (id: number) => {
+    try {
+      await apiRequest("DELETE", `/api/discrepancies/${id}`);
+      
+      toast({
+        title: "Discrepancy Deleted",
+        description: "The discrepancy has been successfully deleted.",
+      });
+      
+      // Refresh the data
+      refetch();
+      
+      // If the deleted discrepancy was selected, reset the selection
+      if (selectedDiscrepancy === id) {
+        setSelectedDiscrepancy(null);
+      }
+    } catch (error) {
+      console.error("Error deleting discrepancy:", error);
+      toast({
+        title: "Error",
+        description: "Failed to delete discrepancy. Please try again.",
+        variant: "destructive"
+      });
+    }
+  };
+  
+  const handleAddDiscrepancy = async (values: z.infer<typeof discrepancyFormSchema>) => {
+    try {
+      if (!comparison) return;
+      
+      if (editMode && editDiscrepancyId) {
+        // If in edit mode, update the existing discrepancy
+        await apiRequest("PATCH", `/api/discrepancies/${editDiscrepancyId}`, {
+          ...values,
+          status: "open"
+        });
+        
+        toast({
+          title: "Discrepancy Updated",
+          description: "The discrepancy has been successfully updated.",
+        });
+        
+        // Reset edit mode
+        setEditMode(false);
+        setEditDiscrepancyId(null);
+      } else {
+        // If not in edit mode, create a new discrepancy
+        const response = await apiRequest("POST", `/api/comparisons/${comparisonId}/discrepancies`, {
+          ...values,
+          status: "open"
+        });
+        
+        const newDiscrepancy = await response.json();
+        setSelectedDiscrepancy(newDiscrepancy.id);
+        
+        toast({
+          title: "Discrepancy Added",
+          description: "Manual discrepancy has been successfully added.",
+        });
+      }
+      
+      // Reset form and UI
+      setAddDiscrepancyOpen(false);
+      form.reset(formDefaultValues);
+      setTempShape(null);
+      
+      // Refresh the data
+      refetch();
+    } catch (error) {
+      console.error("Error with discrepancy:", error);
+      toast({
+        title: "Error",
+        description: `Failed to ${editMode ? "update" : "add"} discrepancy. Please try again.`,
+        variant: "destructive"
+      });
+    }
+  };
+  
+  // Main component render
   return (
     <div className="bg-white rounded-lg shadow-sm overflow-hidden mb-4">
       {/* Header */}
@@ -265,6 +492,20 @@ export default function ComparisonResults({ comparisonId }: ComparisonResultsPro
               <Badge variant="outline" className="bg-red-100 text-red-800 hover:bg-red-100">
                 {filteredDiscrepancies.length} issues
               </Badge>
+              {comparison.usedFallback && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger>
+                      <Badge variant="outline" className="bg-amber-100 text-amber-800 hover:bg-amber-100">
+                        Fallback Mode
+                      </Badge>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p className="max-w-xs">This comparison used the fallback analysis engine because AI services were unavailable. Manual verification of highlighted areas is recommended.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
             </div>
             <div className="flex items-center space-x-2">
               <div className="flex items-center space-x-2 mr-2">
@@ -390,9 +631,52 @@ export default function ComparisonResults({ comparisonId }: ComparisonResultsPro
                     </div>
                     
                     <div className="flex items-start space-x-1">
-                      <Button variant="ghost" size="icon">
-                        <MoreVerticalIcon className="h-4 w-4 text-gray-400" />
-                      </Button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon">
+                            <MoreVerticalIcon className="h-4 w-4 text-gray-400" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem onClick={() => {
+                            // Set form values and edit mode
+                            form.reset({
+                              title: discrepancy.title,
+                              description: discrepancy.description || "",
+                              type: discrepancy.type as any,
+                              priority: discrepancy.priority as any,
+                              coordinates: discrepancy.coordinates as any
+                            });
+                            
+                            // Set temp shape for drawing with existing coordinates
+                            if (discrepancy.coordinates) {
+                              const coords = discrepancy.coordinates as any;
+                              setTempShape({
+                                x: coords.x,
+                                y: coords.y,
+                                width: coords.width,
+                                height: coords.height
+                              });
+                            }
+                            
+                            setEditMode(true);
+                            setEditDiscrepancyId(discrepancy.id);
+                            setAddDiscrepancyOpen(true);
+                          }}>
+                            <Pencil className="h-4 w-4 mr-2" />
+                            Edit
+                          </DropdownMenuItem>
+                          <DropdownMenuItem 
+                            className="text-red-600"
+                            onClick={() => handleDeleteDiscrepancy(discrepancy.id)}
+                          >
+                            <Trash2 className="h-4 w-4 mr-2" />
+                            Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                   </div>
                   
@@ -444,10 +728,253 @@ export default function ComparisonResults({ comparisonId }: ComparisonResultsPro
             ))}
             
             {/* Add Discrepancy Button */}
-            <button className="w-full bg-white border border-dashed border-gray-300 rounded-lg p-3 text-gray-500 hover:bg-gray-50 transition-colors flex items-center justify-center space-x-2">
+            <button 
+              onClick={() => {
+                // Reset form to defaults and ensure we're not in edit mode
+                setEditMode(false);
+                setEditDiscrepancyId(null);
+                form.reset(formDefaultValues);
+                setAddDiscrepancyOpen(true);
+              }}
+              className="w-full bg-white border border-dashed border-gray-300 rounded-lg p-3 text-gray-500 hover:bg-gray-50 transition-colors flex items-center justify-center space-x-2"
+            >
               <PlusCircleIcon className="h-4 w-4" />
               <span className="text-sm font-medium">Add manual discrepancy</span>
             </button>
+            
+            {/* Add Discrepancy Dialog */}
+            <Dialog 
+              open={addDiscrepancyOpen} 
+              onOpenChange={(open) => {
+                if (!open) {
+                  // Reset form and edit mode when dialog closes
+                  setEditMode(false);
+                  setEditDiscrepancyId(null);
+                  form.reset(formDefaultValues);
+                  setTempShape(null);
+                }
+                setAddDiscrepancyOpen(open);
+              }}
+            >
+              <DialogContent className="max-w-lg">
+                <DialogHeader>
+                  <DialogTitle>
+                    {editMode ? "Edit Discrepancy" : "Add Manual Discrepancy"}
+                  </DialogTitle>
+                  <DialogDescription>
+                    {editMode 
+                      ? "Edit the discrepancy details to update the information."
+                      : "Create a manual discrepancy to track issues not detected by AI. Draw directly on the image to specify the location."
+                    }
+                  </DialogDescription>
+                </DialogHeader>
+                
+                {/* Drawing canvas section - shown in both add and edit modes */}
+                <div className="mt-4 mb-6">
+                  <div className="border border-gray-200 rounded-lg relative overflow-hidden">
+                    {/* View toggle control */}
+                    <div className="p-2 bg-gray-50 border-b border-gray-200 flex justify-between items-center">
+                      <div className="flex items-center space-x-2">
+                        <Label htmlFor="modal-view-toggle" className="text-xs text-gray-500">
+                          {showDesignInModal ? "Design View" : "Website View"}
+                        </Label>
+                        <Switch
+                          id="modal-view-toggle"
+                          checked={showDesignInModal}
+                          onCheckedChange={handleToggleDesignView}
+                          aria-label="Toggle between design and website view"
+                        />
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        {isDrawing ? 'Drawing...' : editMode ? 'Click and drag to adjust the highlighted area' : 'Click and drag to mark the discrepancy area'}
+                      </div>
+                    </div>
+                    
+                    {/* Image drawing area with event handlers from the component */}
+                    <div 
+                      className="w-full bg-gray-50 flex items-center justify-center"
+                      style={{
+                        minHeight: '280px',
+                        position: 'relative', 
+                        userSelect: 'none',
+                        cursor: !showDesignInModal ? 'crosshair' : 'default'
+                      }}
+                      onMouseDown={!showDesignInModal ? handleMouseDown : undefined}
+                      onMouseMove={!showDesignInModal ? handleMouseMove : undefined}
+                      onMouseUp={handleMouseUp}
+                      onMouseLeave={handleMouseUp}
+                    >
+                      {/* Actual image content */}
+                      <div className="relative select-none" style={{ cursor: !showDesignInModal ? 'crosshair' : 'default' }}>
+                        {/* Display design image or website image based on toggle */}
+                        {comparison ? (
+                          showDesignInModal ? (
+                            comparison.designImagePath ? (
+                              <div className="relative">
+                                <img
+                                  src={`/${comparison.designImagePath.startsWith('/') ? 
+                                    comparison.designImagePath.substring(1) : 
+                                    comparison.designImagePath}`}
+                                  alt="Design mockup for reference"
+                                  className="max-w-full max-h-[280px]"
+                                  onError={(e) => {
+                                    const target = e.target as HTMLImageElement;
+                                    target.src = '/uploads/no-image.svg';
+                                  }}
+                                />
+                              </div>
+                            ) : (
+                              <div className="flex items-center justify-center h-[280px]">
+                                <p className="text-gray-400">No design image available</p>
+                              </div>
+                            )
+                          ) : (
+                            comparison.websiteImagePath ? (
+                              <div className="relative">
+                                <img
+                                  src={`/${comparison.websiteImagePath.startsWith('/') ? 
+                                    comparison.websiteImagePath.substring(1) : 
+                                    comparison.websiteImagePath}`}
+                                  alt="Website implementation for marking issues"
+                                  className="max-w-full max-h-[280px]"
+                                  onError={(e) => {
+                                    const target = e.target as HTMLImageElement;
+                                    target.src = '/uploads/no-image.svg';
+                                  }}
+                                />
+
+                                {/* Drawing Overlay */}
+                                {tempShape && (
+                                  <div 
+                                    className="absolute border-2 border-red-500 bg-red-300 bg-opacity-30 pointer-events-none z-10"
+                                    style={{
+                                      top: `${tempShape.y}px`,
+                                      left: `${tempShape.x}px`,
+                                      width: `${tempShape.width}px`,
+                                      height: `${tempShape.height}px`
+                                    }}
+                                  />
+                                )}
+                              </div>
+                            ) : (
+                              <div className="flex items-center justify-center h-[280px]">
+                                <p className="text-gray-400">No website image available</p>
+                              </div>
+                            )
+                          )
+                        ) : (
+                          <div className="flex items-center justify-center h-[280px]">
+                            <p className="text-gray-400">Loading...</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Form */}
+                <Form {...form}>
+                  <form onSubmit={form.handleSubmit(handleAddDiscrepancy)} className="space-y-4">
+                    <FormField
+                      control={form.control}
+                      name="title"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Title</FormLabel>
+                          <FormControl>
+                            <Input placeholder="Enter title..." {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    
+                    <FormField
+                      control={form.control}
+                      name="description"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="flex items-center gap-1">
+                            Description
+                            <span className="text-sm text-muted-foreground">(optional)</span>
+                          </FormLabel>
+                          <FormControl>
+                            <Textarea placeholder="Describe the issue (optional)..." {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                      <FormField
+                        control={form.control}
+                        name="type"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Type</FormLabel>
+                            <Select 
+                              value={field.value} 
+                              onValueChange={field.onChange}
+                            >
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Select type" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="color">Color</SelectItem>
+                                <SelectItem value="size">Size</SelectItem>
+                                <SelectItem value="typography">Typography</SelectItem>
+                                <SelectItem value="position">Position</SelectItem>
+                                <SelectItem value="layout">Layout</SelectItem>
+                                <SelectItem value="other">Other</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      
+                      <FormField
+                        control={form.control}
+                        name="priority"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Priority</FormLabel>
+                            <Select 
+                              value={field.value} 
+                              onValueChange={field.onChange}
+                            >
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Select priority" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="high">High</SelectItem>
+                                <SelectItem value="medium">Medium</SelectItem>
+                                <SelectItem value="low">Low</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                    
+                    <DialogFooter>
+                      <Button variant="outline" type="button" onClick={() => setAddDiscrepancyOpen(false)} className="mr-2">
+                        Cancel
+                      </Button>
+                      <Button type="submit">
+                        {editMode ? "Update Discrepancy" : "Add Discrepancy"}
+                      </Button>
+                    </DialogFooter>
+                  </form>
+                </Form>
+              </DialogContent>
+            </Dialog>
           </div>
         </div>
       </div>

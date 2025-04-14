@@ -30,7 +30,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, PanelTopDashed } from "lucide-react";
+import { Loader2, PanelTopDashed, Github } from "lucide-react";
+import { Separator } from "@/components/ui/separator";
 
 // Define the form schemas
 const loginSchema = z.object({
@@ -175,6 +176,27 @@ export default function AuthPage() {
                       </Button>
                     </form>
                   </Form>
+                  
+                  <div className="mt-6">
+                    <div className="relative">
+                      <div className="absolute inset-0 flex items-center">
+                        <Separator className="w-full" />
+                      </div>
+                      <div className="relative flex justify-center text-xs uppercase">
+                        <span className="bg-background px-2 text-muted-foreground">
+                          Or continue with
+                        </span>
+                      </div>
+                    </div>
+                    <div className="mt-4">
+                      <Button variant="outline" className="w-full" asChild>
+                        <a href="/api/auth/github">
+                          <Github className="mr-2 h-4 w-4" />
+                          GitHub
+                        </a>
+                      </Button>
+                    </div>
+                  </div>
                 </TabsContent>
                 <TabsContent value="register">
                   <Form {...registerForm}>
@@ -270,6 +292,27 @@ export default function AuthPage() {
                       </Button>
                     </form>
                   </Form>
+                  
+                  <div className="mt-6">
+                    <div className="relative">
+                      <div className="absolute inset-0 flex items-center">
+                        <Separator className="w-full" />
+                      </div>
+                      <div className="relative flex justify-center text-xs uppercase">
+                        <span className="bg-background px-2 text-muted-foreground">
+                          Or continue with
+                        </span>
+                      </div>
+                    </div>
+                    <div className="mt-4">
+                      <Button variant="outline" className="w-full" asChild>
+                        <a href="/api/auth/github">
+                          <Github className="mr-2 h-4 w-4" />
+                          GitHub
+                        </a>
+                      </Button>
+                    </div>
+                  </div>
                 </TabsContent>
               </Tabs>
             </CardContent>

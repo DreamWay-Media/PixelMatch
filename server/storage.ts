@@ -19,6 +19,8 @@ export interface IStorage {
   // User operations
   getUser(id: number): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
+  getUserByEmail(email: string): Promise<User | undefined>;
+  getUserByGithubId(githubId: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
   updateUser(id: number, user: Partial<User>): Promise<User | undefined>;
   
@@ -39,6 +41,7 @@ export interface IStorage {
   getDiscrepancy(id: number): Promise<Discrepancy | undefined>;
   createDiscrepancy(discrepancy: InsertDiscrepancy): Promise<Discrepancy>;
   updateDiscrepancy(id: number, discrepancy: Partial<Discrepancy>): Promise<Discrepancy | undefined>;
+  deleteDiscrepancy(id: number): Promise<boolean>;
   
   // Comment operations
   getComments(discrepancyId?: number): Promise<Comment[]>;
@@ -94,7 +97,8 @@ export class MemStorage implements IStorage {
     import('memorystore').then(memorystore => {
       const MemoryStore = memorystore.default(session);
       this.sessionStore = new MemoryStore({
-        checkPeriod: 86400000 // Prune expired entries every 24h
+        checkPeriod: 86400000, // Prune expired entries every 24h
+        ttl: 30 * 24 * 60 * 60 * 1000 // 30 days session TTL to match cookie maxAge
       });
     });
     
@@ -115,6 +119,18 @@ export class MemStorage implements IStorage {
   async getUserByUsername(username: string): Promise<User | undefined> {
     return Array.from(this.users.values()).find(
       (user) => user.username === username,
+    );
+  }
+
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    return Array.from(this.users.values()).find(
+      (user) => user.email === email,
+    );
+  }
+
+  async getUserByGithubId(githubId: string): Promise<User | undefined> {
+    return Array.from(this.users.values()).find(
+      (user) => user.githubId === githubId,
     );
   }
 
@@ -188,7 +204,8 @@ export class MemStorage implements IStorage {
       ...insertComparison, 
       id, 
       createdAt: now,
-      lastComparedAt: null  // Use null instead of undefined for Date | null
+      lastComparedAt: null,  // Use null instead of undefined for Date | null
+      usedFallback: insertComparison.usedFallback || false  // Ensure usedFallback is always initialized
     };
     this.comparisons.set(id, comparison);
     return comparison;
@@ -236,6 +253,21 @@ export class MemStorage implements IStorage {
     const updatedDiscrepancy = { ...discrepancy, ...discrepancyUpdate };
     this.discrepancies.set(id, updatedDiscrepancy);
     return updatedDiscrepancy;
+  }
+  
+  async deleteDiscrepancy(id: number): Promise<boolean> {
+    // First check if the discrepancy exists
+    const discrepancy = this.discrepancies.get(id);
+    if (!discrepancy) return false;
+    
+    // Delete all comments associated with this discrepancy
+    const discrepancyComments = await this.getComments(id);
+    for (const comment of discrepancyComments) {
+      this.comments.delete(comment.id);
+    }
+    
+    // Delete the discrepancy
+    return this.discrepancies.delete(id);
   }
   
   // Comment operations
@@ -421,7 +453,8 @@ export class DatabaseStorage implements IStorage {
     const PostgresSessionStore = connectPg(session);
     this.sessionStore = new PostgresSessionStore({
       pool,
-      createTableIfMissing: true
+      createTableIfMissing: true,
+      ttl: 30 * 24 * 60 * 60 // 30 days in seconds to match cookie maxAge
     });
   }
   
@@ -433,6 +466,16 @@ export class DatabaseStorage implements IStorage {
   
   async getUserByUsername(username: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.username, username));
+    return user;
+  }
+  
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.email, email));
+    return user;
+  }
+  
+  async getUserByGithubId(githubId: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.githubId, githubId));
     return user;
   }
   
@@ -488,7 +531,12 @@ export class DatabaseStorage implements IStorage {
   }
   
   async createComparison(insertComparison: InsertComparison): Promise<Comparison> {
-    const [comparison] = await db.insert(comparisons).values(insertComparison).returning();
+    // Ensure usedFallback is explicitly set if not provided
+    const comparisonData = {
+      ...insertComparison,
+      usedFallback: insertComparison.usedFallback ?? false
+    };
+    const [comparison] = await db.insert(comparisons).values(comparisonData).returning();
     return comparison;
   }
   
@@ -526,6 +574,25 @@ export class DatabaseStorage implements IStorage {
       .where(eq(discrepancies.id, id))
       .returning();
     return updatedDiscrepancy;
+  }
+  
+  async deleteDiscrepancy(id: number): Promise<boolean> {
+    try {
+      // First delete all comments associated with this discrepancy
+      await db
+        .delete(comments)
+        .where(eq(comments.discrepancyId, id));
+      
+      // Then delete the discrepancy
+      const result = await db
+        .delete(discrepancies)
+        .where(eq(discrepancies.id, id));
+      
+      return result.rowCount > 0;
+    } catch (error) {
+      console.error('Error deleting discrepancy:', error);
+      return false;
+    }
   }
   
   // Comment operations

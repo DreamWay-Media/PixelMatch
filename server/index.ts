@@ -6,6 +6,9 @@ import path from "path";
 // Force use of database in all environments
 process.env.USE_DATABASE = "true";
 
+// Set Anthropic as the default AI provider (OpenAI has quota issues)
+process.env.AI_PROVIDER = "anthropic";
+
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));

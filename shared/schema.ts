@@ -10,6 +10,11 @@ export const users = pgTable("users", {
   password: text("password").notNull(),
   role: text("role").notNull().default("user"),
   profilePicture: text("profile_picture"),
+  githubId: text("github_id").unique(),
+  name: text("name"),
+  bio: text("bio"),
+  title: text("title"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
 export const insertUserSchema = createInsertSchema(users).pick({
@@ -18,6 +23,11 @@ export const insertUserSchema = createInsertSchema(users).pick({
   password: true,
   role: true,
   profilePicture: true,
+  githubId: true,
+  name: true,
+  bio: true,
+  title: true,
+  createdAt: true,
 });
 
 export const projects = pgTable("projects", {
@@ -44,6 +54,7 @@ export const comparisons = pgTable("comparisons", {
   status: text("status").notNull().default("pending"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   lastComparedAt: timestamp("last_compared_at"),
+  usedFallback: boolean("used_fallback").default(false),
 });
 
 export const insertComparisonSchema = createInsertSchema(comparisons).pick({
@@ -53,14 +64,15 @@ export const insertComparisonSchema = createInsertSchema(comparisons).pick({
   designImagePath: true,
   websiteImagePath: true,
   status: true,
-  createdAt: true
+  createdAt: true,
+  usedFallback: true
 });
 
 export const discrepancies = pgTable("discrepancies", {
   id: serial("id").primaryKey(),
   comparisonId: integer("comparison_id").notNull(),
   title: text("title").notNull(),
-  description: text("description").notNull(),
+  description: text("description"), // Made optional
   type: text("type").notNull(),
   priority: text("priority").notNull().default("medium"),
   status: text("status").notNull().default("open"),
